@@ -1,14 +1,42 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { SafeResourceUrl, DomSanitizer } from '@angular/platform-browser';
-import { SupabaseService } from '../supabase.service';
+import { SupabaseService } from '../services/supabase.service';
 import { NgIf } from '@angular/common';
+import { from } from 'rxjs';
 
 @Component({
   selector: 'app-avatar',
   standalone: true,
   imports: [NgIf],
-  templateUrl: './avatar.component.html',
-  styleUrl: './avatar.component.css',
+  template: `
+    <div>
+      <img
+        *ngIf="_avatarUrl"
+        [src]="_avatarUrl"
+        alt="Avatar"
+        class="avatar image"
+        style="height: 150px; width: 150px"
+      />
+    </div>
+    <div
+      *ngIf="!_avatarUrl"
+      class="avatar no-image"
+      style="height: 150px; width: 150px"
+    ></div>
+    <div style="width: 150px">
+      <label class="button primary block" for="single">
+        {{ uploading ? 'Uploading ...' : 'Upload' }}
+      </label>
+      <input
+        style="visibility: hidden; position: absolute"
+        type="file"
+        id="single"
+        accept="image/*"
+        (change)="uploadAvatar($event)"
+        [disabled]="uploading"
+      />
+    </div>
+  `,
 })
 export class AvatarComponent {
   _avatarUrl: SafeResourceUrl | undefined;
@@ -28,40 +56,53 @@ export class AvatarComponent {
     private readonly dom: DomSanitizer
   ) {}
 
-  async downloadImage(path: string) {
-    try {
-      const { data } = await this.supabase.downLoadImage(path);
-      if (data instanceof Blob) {
-        this._avatarUrl = this.dom.bypassSecurityTrustResourceUrl(
-          URL.createObjectURL(data)
-        );
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error('Error downloading image: ', error.message);
-      }
-    }
+  downloadImage(path: string): void {
+    const downloadImage$ = from(this.supabase.downLoadImage(path));
+
+    downloadImage$.subscribe({
+      next: ({ data }) => {
+        if (data instanceof Blob) {
+          this._avatarUrl = this.dom.bypassSecurityTrustResourceUrl(
+            URL.createObjectURL(data)
+          );
+        }
+      },
+      error: (error) => {
+        if (error instanceof Error) {
+          console.error('Error downloading image: ', error.message);
+        }
+      },
+    });
   }
 
-  async uploadAvatar(event: any) {
-    try {
-      this.uploading = true;
-      if (!event.target.files || event.target.files.length === 0) {
-        throw new Error('You must select an image to upload.');
-      }
+  uploadAvatar(event: any): void {
+    this.uploading = true;
 
-      const file = event.target.files[0];
-      const fileExt = file.name.split('.').pop();
-      const filePath = `${Math.random()}.${fileExt}`;
-
-      await this.supabase.uploadAvatar(filePath, file);
-      this.upload.emit(filePath);
-    } catch (error) {
-      if (error instanceof Error) {
-        alert(error.message);
-      }
-    } finally {
+    if (!event.target.files || event.target.files.length === 0) {
+      alert('You must select an image to upload.');
       this.uploading = false;
+      return;
     }
+
+    const file = event.target.files[0];
+    const fileExt = file.name.split('.').pop();
+    const filePath = `${Math.random()}.${fileExt}`;
+
+    const uploadAvatar$ = from(this.supabase.uploadAvatar(filePath, file));
+
+    uploadAvatar$.subscribe({
+      next: () => {
+        this.upload.emit(filePath);
+      },
+      error: (error) => {
+        if (error instanceof Error) {
+          alert(error.message);
+        }
+        this.uploading = false;
+      },
+      complete: () => {
+        this.uploading = false;
+      },
+    });
   }
 }

@@ -7,13 +7,5 @@ import { RouterModule } from '@angular/router';
 export const appConfig: ApplicationConfig = {
   providers: [
     importProvidersFrom(HttpClientModule),
-
-    // provideFileRouter(),
-    // provideHttpClient(),
-    // provideClientHydration(),
-    // // provideContent(withMarkdownRenderer()),
-    // importProvidersFrom(
-    //   RouterModule.forRoot(routes, { onSameUrlNavigation: 'reload' })
-    // ),
   ],
 };

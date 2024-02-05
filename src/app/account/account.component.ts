@@ -1,22 +1,56 @@
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, Input, OnInit, effect } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { AuthSession } from '@supabase/supabase-js';
-import { Profile, SupabaseService } from '../supabase.service';
+import { Profile, SupabaseService } from '../services/supabase.service';
 import { AvatarComponent } from '../avatar/avatar.component';
+import { JsonPipe } from '@angular/common';
+import { from } from 'rxjs';
 
 @Component({
   selector: 'app-account',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, AvatarComponent],
-  templateUrl: './account.component.html',
-  styleUrl: './account.component.css',
+  imports: [ReactiveFormsModule, FormsModule, AvatarComponent, JsonPipe],
+  template: `
+    <form
+      [formGroup]="updateProfileForm"
+      (ngSubmit)="updateProfile()"
+      class="form-widget"
+    >
+      <app-avatar [avatarUrl]="this.avatarUrl" (upload)="updateAvatar($event)">
+      </app-avatar>
+
+      <div>
+        <label for="email">Email</label>
+        <input id="email" type="text" [value]="session.user.email" disabled />
+      </div>
+      <div>
+        <label for="username">Name</label>
+        <input formControlName="username" id="username" type="text" />
+      </div>
+      <div>
+        <label for="website">Website</label>
+        <input formControlName="website" id="website" type="url" />
+      </div>
+
+      <div>
+        <button type="submit" class="button primary block" [disabled]="loading">
+          {{ loading ? 'Loading ...' : 'Update' }}
+        </button>
+      </div>
+
+      <div>
+        <button class="button block" (click)="signOut()">Sign Out</button>
+      </div>
+    </form>
+
+    {{ supabase.$profile() | json }}
+  `,
 })
 export class AccountComponent {
   loading = false;
-  profile!: Profile;
 
   @Input()
-  session!: AuthSession;
+  session: AuthSession | any;
 
   updateProfileForm = this.formBuilder.group({
     username: '',
@@ -24,85 +58,74 @@ export class AccountComponent {
     avatar_url: '',
   });
 
-  constructor(
-    private readonly supabase: SupabaseService,
-    private formBuilder: FormBuilder
-  ) {}
+  patchProfileForm = effect(() => {
+    if (this.supabase.$profile()) {
+      const { username, website, avatar_url } = this.supabase.$profile();
 
-  async ngOnInit(): Promise<void> {
-    await this.getProfile();
-
-    const { username, website, avatar_url } = this.profile;
-    this.updateProfileForm.patchValue({
-      username,
-      website,
-      avatar_url,
-    });
-  }
-
-  async getProfile() {
-    try {
-      this.loading = true;
-      const { user } = this.session;
-      const {
-        data: profile,
-        error,
-        status,
-      } = await this.supabase.profile(user);
-
-      if (error && status !== 406) {
-        throw error;
-      }
-
-      if (profile) {
-        this.profile = profile;
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        alert(error.message);
-      }
-    } finally {
-      this.loading = false;
-    }
-  }
-
-  async updateProfile(): Promise<void> {
-    try {
-      this.loading = true;
-      const { user } = this.session;
-
-      const username = this.updateProfileForm.value.username as string;
-      const website = this.updateProfileForm.value.website as string;
-      const avatar_url = this.updateProfileForm.value.avatar_url as string;
-
-      const { error } = await this.supabase.updateProfile({
-        id: user.id,
+      this.updateProfileForm.patchValue({
         username,
         website,
         avatar_url,
       });
-      if (error) throw error;
-    } catch (error) {
-      if (error instanceof Error) {
-        alert(error.message);
-      }
-    } finally {
-      this.loading = false;
     }
+  });
+
+  constructor(
+    public readonly supabase: SupabaseService,
+    private formBuilder: FormBuilder
+  ) {}
+
+  ngOnInit() {}
+
+  updateProfile(): void {
+    this.loading = true;
+    const { user } = this.session;
+
+    const username = this.updateProfileForm.value.username as string;
+    const website = this.updateProfileForm.value.website as string;
+    const avatar_url = this.updateProfileForm.value.avatar_url as string;
+
+    const profile: Profile = {
+      id: user.id,
+      username,
+      website,
+      avatar_url,
+      updated_at: new Date(),
+    };
+
+    this.supabase.updateProfile(profile).subscribe({
+      error: (error) => {
+        if (error instanceof Error) {
+          alert(error.message);
+        }
+        this.loading = false;
+      },
+      complete: () => {
+        this.loading = false;
+      },
+    });
+  }
+
+  updateAvatar(event: string): void {
+    this.updateProfileForm.patchValue({
+      avatar_url: event,
+    });
+    this.updateProfile();
+  }
+
+  signOut(): void {
+    const signOut$ = from(this.supabase.signOut());
+
+    signOut$.subscribe({
+      error: (error) => {
+        if (error instanceof Error) {
+          alert(error.message);
+        }
+      },
+    });
   }
 
   get avatarUrl() {
     return this.updateProfileForm.value.avatar_url as string;
-  }
-
-  async updateAvatar(event: string): Promise<void> {
-    this.updateProfileForm.patchValue({
-      avatar_url: event,
-    });
-    await this.updateProfile();
-  }
-
-  async signOut() {
-    await this.supabase.signOut();
   }
 }
