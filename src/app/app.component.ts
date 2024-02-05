@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { SupabaseService } from './supabase.service';
+import { SupabaseService } from './services/supabase.service';
 import { AccountComponent } from './account/account.component';
 import { AuthComponent } from './auth/auth.component';
 import { NgIf } from '@angular/common';
@@ -8,17 +8,22 @@ import { NgIf } from '@angular/common';
   selector: 'app-root',
   standalone: true,
   imports: [AccountComponent, AuthComponent, NgIf],
-  templateUrl: './app.component.html',
-  styleUrls: ['./app.component.css'],
+  template: `
+    <div class="container" style="padding: 50px 0 100px 0">
+      <app-account
+        *ngIf="supabase.$session(); else auth"
+        [session]="supabase.$session()"
+      ></app-account>
+      <ng-template #auth>
+        <app-auth></app-auth>
+      </ng-template>
+    </div>
+  `,
 })
 export class AppComponent {
   title = 'supabase-auth';
 
-  session: any = this.supabase.session;
+  constructor(public readonly supabase: SupabaseService) {}
 
-  constructor(private readonly supabase: SupabaseService) {}
-
-  ngOnInit() {
-    this.supabase.authChanges((_, session) => (this.session = session));
-  }
+  ngOnInit() {}
 }
