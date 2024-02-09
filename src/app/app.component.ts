@@ -9,9 +9,9 @@ import { NgIf } from '@angular/common';
   standalone: true,
   imports: [AccountComponent, AuthComponent, NgIf],
   template: `
-    <div class="container" style="padding: 50px 0 100px 0">
+    <div class="container">
       <app-account
-        *ngIf="supabase.$session(); else auth"
+        *ngIf="supabase.$session() && supabase.$session()?.provider_token; else auth"
         [session]="supabase.$session()"
       ></app-account>
       <ng-template #auth>

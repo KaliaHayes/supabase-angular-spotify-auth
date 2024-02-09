@@ -1,23 +1,63 @@
-import { Injectable, computed, effect, signal } from '@angular/core';
+import { Injectable, computed, effect, signal, inject } from '@angular/core';
 import {
-  AuthChangeEvent,
   AuthSession,
   createClient,
-  Session,
   SupabaseClient,
   User,
 } from '@supabase/supabase-js';
-import { BehaviorSubject, from, map, Observable, tap } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  forkJoin,
+  from,
+  map,
+  Observable,
+  of,
+  switchMap,
+  tap,
+} from 'rxjs';
 import { environment } from 'src/environments/environment';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { profile } from 'console';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
 
 export interface Profile {
   id?: string;
-  username: string;
-  website: string;
-  avatar_url: string;
-  updated_at: Date;
+  spotify_id?: string;
+  name?: string;
+  avatar_url?: string;
+  created_at?: Date;
+  updated_at?: Date;
+  premium?: boolean;
+  country?: string;
+  email?: string;
+}
+
+interface SpotifyProfile {
+  display_name: string;
+  external_urls: {
+    spotify: string;
+  };
+  href: string;
+  id: string;
+  images: {
+    url: string;
+    height: number;
+    width: number;
+  }[];
+  type: string;
+  uri: string;
+  followers: {
+    href: null;
+    total: number;
+  };
+  country: string;
+  product: string;
+  explicit_content: {
+    filter_enabled: boolean;
+    filter_locked: boolean;
+  };
+  email: string;
 }
 
 @Injectable({
@@ -25,6 +65,8 @@ export interface Profile {
 })
 export class SupabaseService {
   private supabase: SupabaseClient;
+  route = inject(ActivatedRoute);
+  http = inject(HttpClient);
 
   private sessionSubject = new BehaviorSubject<AuthSession | null>(null);
   session$ = this.sessionSubject.asObservable();
@@ -34,12 +76,12 @@ export class SupabaseService {
   user$ = this.userSubject.asObservable();
   $user = toSignal(this.user$, { initialValue: null });
 
-  $profile = signal<any>('');
+  $profile = signal<Profile>({});
+  $errorDescription = signal<string>('');
+  $showEmailVerificationMessage = signal<boolean>(false);
 
-  test = effect(() => {
-    // console.log(this.$session());
-    // console.log(this.$user());
-  });
+  currentUser: string = '';
+  isGettingProviderToken: boolean = false;
 
   constructor() {
     this.supabase = createClient(
@@ -47,44 +89,135 @@ export class SupabaseService {
       environment.supabaseKey
     );
 
-    this.getUser();
+    this.onAuthStateChange();
+
+    this.route.queryParams.subscribe((params) => {
+      const errorDescription = params['error_description'];
+
+      if (errorDescription && errorDescription.includes('spotify')) {
+        this.$errorDescription.set(errorDescription);
+        this.$showEmailVerificationMessage.set(true);
+      }
+    });
+  }
+
+  signInWithSpotify(): Observable<any> {
+    // if (this.isGettingProviderToken) this.isGettingProviderToken = false;
+    // console.log('this.isGettingProviderToken: ', this.isGettingProviderToken);
+
+    return from(
+      this.supabase.auth.signInWithOAuth({
+        provider: 'spotify',
+        options: {
+          scopes:
+            'user-read-currently-playing, user-read-recently-played, user-read-playback-state, user-top-read, user-modify-playback-state, user-library-read, user-library-modify, user-read-private, playlist-read-private, playlist-read-collaborative, playlist-modify-public, playlist-modify-private, user-read-email, user-follow-read',
+        },
+      })
+    );
+  }
+
+  onAuthStateChange() {
+    this.supabase.auth.onAuthStateChange((event, session) => {
+      console.log('event: ', event);
+      console.log('session: ', session);
+      this.sessionSubject.next(session);
+
+      if (session) {
+        if (
+          event === 'SIGNED_IN' ||
+          event == 'TOKEN_REFRESHED' ||
+          event === 'INITIAL_SESSION'
+        ) {
+          if (!session.provider_token) {
+            this.isGettingProviderToken = true;
+            this.signInWithSpotify().subscribe();
+          } else {
+            if (!this.currentUser) {
+              this.currentUser = session.user?.id ?? '';
+
+              this.getUser();
+            }
+          }
+
+          this.$showEmailVerificationMessage.set(false);
+        }
+
+        if (event === 'TOKEN_REFRESHED') {
+          this.supabase.auth.refreshSession();
+          this.getUser();
+        }
+
+        if (event === 'USER_UPDATED') {
+          this.currentUser = session.user?.id ?? '';
+          this.getUser();
+        }
+      } else {
+        this.sessionSubject.next(null);
+      }
+    });
   }
 
   getUser() {
     this.supabase.auth.getUser().then(({ data, error }) => {
       this.userSubject.next(data?.user ?? null);
       if (data?.user) {
-        this.getProfile(data.user);
+        console.log('data?.user: ', data?.user);
+        this.getProfile(data.user).subscribe();
       }
-      console.log('data: ', data);
-
-      this.supabase.auth.onAuthStateChange((event, session) => {
-        this.sessionSubject.next(session ?? null);
-      });
     });
   }
 
   getProfile(user: User): Observable<any> {
-    const getProfilePromise = this.supabase
-      .from('profiles')
-      .select(`username, website, avatar_url`)
-      .eq('id', user.id)
-      .single()
-      .then(({ data, error }) => {
+    return from(
+      this.supabase.from('profiles').select().eq('id', user.id).single()
+    ).pipe(
+      tap(({ data, error }) => {
         if (error) throw error;
         this.$profile.set(data);
-        return data;
-      });
+      }),
+      switchMap(({ data }) => {
+        let profile = data as Profile;
+        const spotifyId = profile?.spotify_id;
 
-    return from(getProfilePromise);
-  }
+        if (spotifyId) {
+          return this.http
+            .get(`https://api.spotify.com/v1/me`, {
+              headers: {
+                Authorization: `Bearer ${this.$session()?.provider_token}`,
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+              },
+            })
+            .pipe(
+              map((response) => response as SpotifyProfile),
+              switchMap((spotifyProfile: SpotifyProfile) => {
+                console.log('Spotify profile: ', spotifyProfile);
+                if (profile.premium === null || profile.country === null) {
+                  profile.premium = spotifyProfile.product === 'premium';
+                  profile.country = spotifyProfile.country;
 
-  signIn(email: string): Observable<any> {
-    return from(this.supabase.auth.signInWithOtp({ email }));
-  }
+                  if (
+                    spotifyProfile.images &&
+                    spotifyProfile.images.length >= 2
+                  ) {
+                    profile.avatar_url =
+                      spotifyProfile.images[1]?.url || profile.avatar_url;
+                  }
 
-  signOut(): Observable<any> {
-    return from(this.supabase.auth.signOut());
+                  return this.updateProfile(profile).pipe(
+                    tap(({ error }) => {
+                      if (error) throw error;
+                    })
+                  );
+                }
+                return of(spotifyProfile);
+              })
+            );
+        }
+
+        return of(profile);
+      })
+    );
   }
 
   updateProfile(profile: Profile): Observable<any> {
@@ -104,11 +237,7 @@ export class SupabaseService {
     return from(updateProfilePromise);
   }
 
-  downLoadImage(path: string): Observable<any> {
-    return from(this.supabase.storage.from('avatars').download(path));
-  }
-
-  uploadAvatar(filePath: string, file: File): Observable<any> {
-    return from(this.supabase.storage.from('avatars').upload(filePath, file));
+  signOut(): Observable<any> {
+    return from(this.supabase.auth.signOut());
   }
 }
