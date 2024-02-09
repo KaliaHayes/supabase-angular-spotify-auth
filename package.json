@@ -38,5 +38,10 @@
     "karma-jasmine-html-reporter": "^1.5.0",
     "rxjs": "^7.8.1",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "@supabase/supabase-js": {
+      "@supabase/gotrue-js": "2.61.0"
+    }
   }
 }
