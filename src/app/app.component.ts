@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { SupabaseService } from './services/supabase.service';
 import { AccountComponent } from './account/account.component';
 import { AuthComponent } from './auth/auth.component';
@@ -11,8 +11,10 @@ import { NgIf } from '@angular/common';
   template: `
     <div class="container">
       <app-account
-        *ngIf="supabase.$session() && supabase.$session()?.provider_token; else auth"
-        [session]="supabase.$session()"
+        *ngIf="
+          supabase.$session() && supabase.$session()?.provider_token;
+          else auth
+        "
       ></app-account>
       <ng-template #auth>
         <app-auth></app-auth>
@@ -21,9 +23,7 @@ import { NgIf } from '@angular/common';
   `,
 })
 export class AppComponent {
+  public readonly supabase: SupabaseService = inject(SupabaseService);
+
   title = 'supabase-auth';
-
-  constructor(public readonly supabase: SupabaseService) {}
-
-  ngOnInit() {}
 }

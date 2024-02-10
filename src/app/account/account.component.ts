@@ -1,19 +1,25 @@
-import { Component, Input, OnInit, effect } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
-import { AuthSession } from '@supabase/supabase-js';
-import { Profile, SupabaseService } from '../services/supabase.service';
-import { AvatarComponent } from '../avatar/avatar.component';
-import { JsonPipe, NgIf } from '@angular/common';
+import { Component, inject } from '@angular/core';
+import { SupabaseService } from '../services/supabase.service';
+import { NgIf, NgStyle } from '@angular/common';
 import { from } from 'rxjs';
 
 @Component({
   selector: 'app-account',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, AvatarComponent, JsonPipe, NgIf],
+  imports: [NgIf, NgStyle],
   template: `
     <div style="width: 50vw">
-      <form [formGroup]="profileForm" class="form-widget">
-        <app-avatar> </app-avatar>
+      <form class="form-widget">
+        <div
+          *ngIf="supabase.$profile().avatar_url; else noImage"
+          class="avatar"
+          [ngStyle]="{
+            'background-image': 'url(' + supabase.$profile().avatar_url + ')'
+          }"
+        ></div>
+        <ng-template #noImage>
+          <div class="avatar no-image"></div>
+        </ng-template>
         <div>
           <label for="email">Name</label>
           <input
@@ -102,33 +108,7 @@ import { from } from 'rxjs';
   `,
 })
 export class AccountComponent {
-  loading = false;
-
-  @Input()
-  session: AuthSession | any;
-
-  profileForm = this.formBuilder.group({
-    name: '',
-    avatar_url: '',
-  });
-
-  patchProfileForm = effect(() => {
-    if (this.supabase.$profile()) {
-      const { name, avatar_url } = this.supabase.$profile();
-
-      this.profileForm.patchValue({
-        name,
-        avatar_url,
-      });
-    }
-  });
-
-  constructor(
-    public readonly supabase: SupabaseService,
-    private formBuilder: FormBuilder
-  ) {}
-
-  ngOnInit() {}
+  public readonly supabase: SupabaseService = inject(SupabaseService);
 
   signOut(): void {
     const signOut$ = from(this.supabase.signOut());
@@ -140,9 +120,5 @@ export class AccountComponent {
         }
       },
     });
-  }
-
-  get avatarUrl() {
-    return this.profileForm.value.avatar_url as string;
   }
 }

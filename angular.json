@@ -14,7 +14,9 @@
         },
         "@schematics/angular:component": {
           "skipTests": true,
-          "standalone": true
+          "standalone": true,
+          "inlineStyle": true,
+          "inlineTemplate": true
         },
         "@schematics/angular:service": {
           "skipTests": true

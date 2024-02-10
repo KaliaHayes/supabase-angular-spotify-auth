@@ -1,4 +1,4 @@
-import { Injectable, computed, effect, signal, inject } from '@angular/core';
+import { Injectable, effect, signal, inject } from '@angular/core';
 import {
   AuthSession,
   createClient,
@@ -8,7 +8,6 @@ import {
 import {
   BehaviorSubject,
   catchError,
-  forkJoin,
   from,
   map,
   Observable,
@@ -21,67 +20,25 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 
-export interface Profile {
-  id?: string;
-  spotify_id?: string;
-  name?: string;
-  avatar_url?: string;
-  created_at?: Date;
-  updated_at?: Date;
-  premium?: boolean;
-  country?: string;
-  email?: string;
-}
-
-interface SpotifyProfile {
-  display_name: string;
-  external_urls: {
-    spotify: string;
-  };
-  href: string;
-  id: string;
-  images: {
-    url: string;
-    height: number;
-    width: number;
-  }[];
-  type: string;
-  uri: string;
-  followers: {
-    href: null;
-    total: number;
-  };
-  country: string;
-  product: string;
-  explicit_content: {
-    filter_enabled: boolean;
-    filter_locked: boolean;
-  };
-  email: string;
-}
-
 @Injectable({
   providedIn: 'root',
 })
 export class SupabaseService {
   private supabase: SupabaseClient;
-  route = inject(ActivatedRoute);
-  http = inject(HttpClient);
+  private route = inject(ActivatedRoute);
+  private http = inject(HttpClient);
 
   private sessionSubject = new BehaviorSubject<AuthSession | null>(null);
   session$ = this.sessionSubject.asObservable();
-  $session = toSignal(this.session$, { initialValue: null }); //
+  $session = toSignal(this.session$, { initialValue: null });
 
   private userSubject = new BehaviorSubject<User | null>(null);
   user$ = this.userSubject.asObservable();
   $user = toSignal(this.user$, { initialValue: null });
 
-  $profile = signal<Profile>({});
-  $errorDescription = signal<string>('');
+  $profile = signal<UserProfile>({});
+  $currentUser = signal<string>('');
   $showEmailVerificationMessage = signal<boolean>(false);
-
-  currentUser: string = '';
-  isGettingProviderToken: boolean = false;
 
   constructor() {
     this.supabase = createClient(
@@ -89,22 +46,50 @@ export class SupabaseService {
       environment.supabaseKey
     );
 
-    this.onAuthStateChange();
-
-    this.route.queryParams.subscribe((params) => {
-      const errorDescription = params['error_description'];
-
-      if (errorDescription && errorDescription.includes('spotify')) {
-        this.$errorDescription.set(errorDescription);
+    this.route.queryParams.subscribe(({ error_description }) => {
+      console.log('error_description: ', error_description);
+      if (error_description && error_description.includes('spotify')) {
         this.$showEmailVerificationMessage.set(true);
+      }
+    });
+
+    this.supabase.auth.onAuthStateChange((event, session) => {
+      console.log('event: ', event);
+      console.log('session: ', session);
+      this.sessionSubject.next(session);
+
+      if (!session) {
+        this.sessionSubject.next(null);
+        return;
+      }
+
+      // Handle sign-in and initial session events
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (!session.provider_token) {
+          this.signInWithSpotify().subscribe();
+        } else if (!this.$currentUser()) {
+          this.$currentUser.set(session.user?.id ?? '');
+          this.getUser();
+        }
+
+        this.$showEmailVerificationMessage.set(false);
+      }
+
+      // Handle token refreshed event
+      if (event === 'TOKEN_REFRESHED') {
+        this.supabase.auth.refreshSession();
+        this.getUser();
+      }
+
+      // Handle user updated event
+      if (event === 'USER_UPDATED') {
+        this.$currentUser.set(session.user?.id ?? '');
+        this.getUser();
       }
     });
   }
 
   signInWithSpotify(): Observable<any> {
-    // if (this.isGettingProviderToken) this.isGettingProviderToken = false;
-    // console.log('this.isGettingProviderToken: ', this.isGettingProviderToken);
-
     return from(
       this.supabase.auth.signInWithOAuth({
         provider: 'spotify',
@@ -116,55 +101,26 @@ export class SupabaseService {
     );
   }
 
-  onAuthStateChange() {
-    this.supabase.auth.onAuthStateChange((event, session) => {
-      console.log('event: ', event);
-      console.log('session: ', session);
-      this.sessionSubject.next(session);
-
-      if (session) {
-        if (
-          event === 'SIGNED_IN' ||
-          event == 'TOKEN_REFRESHED' ||
-          event === 'INITIAL_SESSION'
-        ) {
-          if (!session.provider_token) {
-            this.isGettingProviderToken = true;
-            this.signInWithSpotify().subscribe();
-          } else {
-            if (!this.currentUser) {
-              this.currentUser = session.user?.id ?? '';
-
-              this.getUser();
-            }
-          }
-
-          this.$showEmailVerificationMessage.set(false);
-        }
-
-        if (event === 'TOKEN_REFRESHED') {
-          this.supabase.auth.refreshSession();
-          this.getUser();
-        }
-
-        if (event === 'USER_UPDATED') {
-          this.currentUser = session.user?.id ?? '';
-          this.getUser();
-        }
-      } else {
-        this.sessionSubject.next(null);
-      }
-    });
-  }
-
   getUser() {
-    this.supabase.auth.getUser().then(({ data, error }) => {
-      this.userSubject.next(data?.user ?? null);
-      if (data?.user) {
-        console.log('data?.user: ', data?.user);
-        this.getProfile(data.user).subscribe();
-      }
-    });
+    this.supabase.auth
+      .getUser()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Error getting user', error);
+          return;
+        }
+
+        const { user } = data ?? {};
+        this.userSubject.next(user ?? null);
+
+        if (user) {
+          console.log('user: ', user);
+          this.getProfile(user).subscribe();
+        }
+      })
+      .catch((error) => {
+        console.error('Error getting user', error);
+      });
   }
 
   getProfile(user: User): Observable<any> {
@@ -176,7 +132,7 @@ export class SupabaseService {
         this.$profile.set(data);
       }),
       switchMap(({ data }) => {
-        let profile = data as Profile;
+        let profile = data as UserProfile;
         const spotifyId = profile?.spotify_id;
 
         if (spotifyId) {
@@ -189,6 +145,10 @@ export class SupabaseService {
               },
             })
             .pipe(
+              catchError((err) => {
+                console.error('Error getting Spotify profile', err);
+                return of({});
+              }),
               map((response) => response as SpotifyProfile),
               switchMap((spotifyProfile: SpotifyProfile) => {
                 console.log('Spotify profile: ', spotifyProfile);
@@ -220,7 +180,7 @@ export class SupabaseService {
     );
   }
 
-  updateProfile(profile: Profile): Observable<any> {
+  updateProfile(profile: UserProfile): Observable<any> {
     const update = {
       ...profile,
       updated_at: new Date(),
@@ -240,4 +200,43 @@ export class SupabaseService {
   signOut(): Observable<any> {
     return from(this.supabase.auth.signOut());
   }
+}
+
+export interface UserProfile {
+  id?: string;
+  spotify_id?: string;
+  name?: string;
+  avatar_url?: string;
+  created_at?: Date;
+  updated_at?: Date;
+  premium?: boolean;
+  country?: string;
+  email?: string;
+}
+
+export interface SpotifyProfile {
+  display_name: string;
+  external_urls: {
+    spotify: string;
+  };
+  href: string;
+  id: string;
+  images: {
+    url: string;
+    height: number;
+    width: number;
+  }[];
+  type: string;
+  uri: string;
+  followers: {
+    href: null;
+    total: number;
+  };
+  country: string;
+  product: string;
+  explicit_content: {
+    filter_enabled: boolean;
+    filter_locked: boolean;
+  };
+  email: string;
 }

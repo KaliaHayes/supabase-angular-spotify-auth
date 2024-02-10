@@ -1,20 +1,11 @@
-import { Component, inject, signal } from '@angular/core';
-import {
-  FormBuilder,
-  FormControl,
-  FormGroup,
-  FormsModule,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
+import { Component, inject } from '@angular/core';
 import { SupabaseService } from '../services/supabase.service';
-import { from } from 'rxjs';
 import { NgIf } from '@angular/common';
 
 @Component({
   selector: 'app-auth',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, NgIf],
+  imports: [NgIf],
   template: `
     <div class="row flex-center flex">
       <div class="col-6 form-widget" aria-live="polite">
@@ -24,24 +15,28 @@ import { NgIf } from '@angular/common';
           Sign in with Spotify to get started ⚡
         </p>
         <div>
-          <button class="button green block" (click)="signInWithSpotify()">
+          <button
+            class="button green block"
+            (click)="supabase.signInWithSpotify()"
+          >
             Sign In With Spotify
           </button>
-          <p *ngIf="supabase.$showEmailVerificationMessage()" class="confirmation">
+          <p
+            *ngIf="supabase.$showEmailVerificationMessage()"
+            class="confirmation"
+          >
             A confirmation email has been sent to your Spotify email! Please
             click the link in the email to verify your email address.
           </p>
         </div>
-        <p>Made by Kalia Hayes</p>
+        <p>
+          Made by
+          <a href="https://kaliahayes.com" target="_blank">Kalia Hayes</a>
+        </p>
       </div>
     </div>
   `,
 })
 export class AuthComponent {
-  loading = false;
   public readonly supabase: SupabaseService = inject(SupabaseService);
-
-  signInWithSpotify(): void {
-    this.supabase.signInWithSpotify();
-  }
 }
