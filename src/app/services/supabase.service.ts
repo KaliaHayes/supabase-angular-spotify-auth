@@ -200,7 +200,7 @@ export class SupabaseService {
   signOut(): Observable<any> {
     return from(this.supabase.auth.signOut()).pipe(
       tap(() => {
-        window.localStorage.removeItem(environment.supabaseAuthToken);
+        window.localStorage.removeItem(environment.supabaseSessionItem);
       }),
       catchError((error) => {
         console.error('Error during sign out:', error);
