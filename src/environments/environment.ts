@@ -4,6 +4,7 @@
 
 export const environment = {
   production: false,
-  supabaseUrl: 'https://<your_supabase_url>.supabase.co',
-  supabaseKey: '<your_supabase_key>',
+  supabaseUrl: '<your_supabase_project_url>', // https://examplesupabaseurl.supabase.co
+  supabaseKey: '<your_supabase_api_key>',
+  supabaseAuthToken: 'sb-<your_supabase_reference_id>-auth-token', // sb-examplesupabaseurl-auth-token
 };
