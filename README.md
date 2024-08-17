@@ -1,6 +1,10 @@
-# SupabaseAuth
+![image](https://github.com/user-attachments/assets/68ada367-0f32-46d4-8a05-6956c9d7b4fa)
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.1.2.
+----
+
+# Supafy
+
+Related Blog Post: [Supafy: An Angular v17 Guide to User Authentication, Management, and Spotify OAuth Social Login using Supabase](https://www.kaliahayes.com/blog/supabase-angular-spotify-auth)
 
 ## Development server
 
@@ -18,3 +22,7 @@ export const environment = {
   supabaseAuthToken: 'sb-<your_supabase_reference_id>-auth-token', // sb-examplesupabaseurl-auth-token
 };
 ```
+
+----
+
+This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.1.2.
